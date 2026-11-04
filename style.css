@@ -1932,3 +1932,76 @@ a:hover {
   .viz-canvas { padding: 14px 10px; }
   .wireframe-grid { grid-template-columns: 1fr; }
 }
+
+
+/* ── Collapsible Sidebar Additions ───────────────────────────── */
+:root {
+  --sidebar-w-collapsed: 64px;
+}
+
+.shell {
+  transition: grid-template-columns 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.shell.sidebar-collapsed {
+  grid-template-columns: var(--sidebar-w-collapsed) 1fr;
+}
+
+.sidebar {
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapse-btn {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.sidebar-collapse-btn:hover {
+  border-color: var(--color-border);
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+/* Collapsed visual states */
+.shell.sidebar-collapsed .sidebar-logo-brand span,
+.shell.sidebar-collapsed .theme-toggle-btn,
+.shell.sidebar-collapsed .accent-picker-bar,
+.shell.sidebar-collapsed .nav-group-label,
+.shell.sidebar-collapsed .sidebar-footer,
+.shell.sidebar-collapsed .nav-link span,
+.shell.sidebar-collapsed .nav-link {
+  font-size: 0;
+}
+
+.shell.sidebar-collapsed .sidebar-logo {
+  padding: 0 10px;
+  justify-content: center;
+}
+
+.shell.sidebar-collapsed .sidebar-logo-brand {
+  margin: 0;
+}
+
+.shell.sidebar-collapsed .nav-link {
+  padding: 10px 0;
+  justify-content: center;
+}
+
+.shell.sidebar-collapsed .nav-icon {
+  margin: 0;
+}
+
+.shell.sidebar-collapsed .sidebar-collapse-btn svg {
+  transform: rotate(180deg);
+}

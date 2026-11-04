@@ -830,4 +830,41 @@
     initAttentionWorkspace();
     initLossSurfaceWorkspace();
   });
+
+  // ── Collapsible Desktop Sidebar ──────────────────────────────
+  const shell = document.querySelector('.shell');
+  const collapseBtns = document.querySelectorAll('[data-action="toggle-sidebar"]');
+
+  function applySidebarState(isCollapsed) {
+    if (isCollapsed) {
+      shell.classList.add('sidebar-collapsed');
+      localStorage.setItem('sidebar-collapsed', 'true');
+    } else {
+      shell.classList.remove('sidebar-collapsed');
+      localStorage.setItem('sidebar-collapsed', 'false');
+    }
+  }
+
+  function toggleSidebar() {
+    const isCurrentlyCollapsed = shell.classList.contains('sidebar-collapsed');
+    applySidebarState(!isCurrentlyCollapsed);
+  }
+
+  collapseBtns.forEach(btn => {
+    btn.addEventListener('click', toggleSidebar);
+  });
+
+  // Load saved state (default is expanded)
+  if (localStorage.getItem('sidebar-collapsed') === 'true') {
+    applySidebarState(true);
+  }
+
+  // Keyboard shortcut: Alt + B or Ctrl + B to fold/unfold sidebar
+  window.addEventListener('keydown', e => {
+    if ((e.altKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+      e.preventDefault();
+      toggleSidebar();
+    }
+  });
+
 })();
