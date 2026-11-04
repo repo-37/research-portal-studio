@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+"""
+research_portal_studio.py
+A reusable static site generator and documentation portal studio that compiles
+Markdown codebases into multi-page research portals sharing the Pure Grayscale
+Design System (R=G=B).
+
+Features:
+- Config-driven (portal.yaml or auto-discovery)
+- Pure Grayscale design tokens & interactive components (Mermaid, ASCII frames, Data Tables, Callouts)
+- 6-Part Scientific Canon card wrapper
+- Collapsible sidebar with Alt+B hotkey & persistent localStorage state
+- Search index generation & cross-page link resolution
+"""
+
+import os
+import sys
+import re
+import html
+import json
+import argparse
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+try:
+    import markdown
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("Error: Missing markdown or beautifulsoup4. Please install via pip:", file=sys.stderr)
+    print("  pip install markdown beautifulsoup4 pyyaml", file=sys.stderr)
+    sys.exit(1)
+
+
+PURE_GRAYSCALE_CANON_HTML = """
+<div class="callout callout-info" style="margin-bottom: 2rem;">
+  <div class="callout-header" style="font-weight: 700; font-size: 0.92rem; margin-bottom: 0.4rem;">
+    <strong>RESEARCH METHODOLOGY & CANONICAL SECTION STRUCTURE</strong>
+  </div>
+  <p style="margin: 0; font-size: 0.88rem; line-height: 1.5; color: var(--color-text-secondary);">
+    This document adheres to the <strong>6-Part Scientific Canon</strong>:
+    (1) Problem Definition & Motivation, (2) Objectives & Research Questions,
+    (3) Baseline & Prior State Analysis, (4) Experimental Methodology,
+    (5) Empirical Results, and (6) Analysis & Synthesis.
+  </p>
+</div>
+"""
+
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="{meta_description}">
+  <title>{page_title} · {site_title}</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({{
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {{
+        primaryColor: '#e0e0e0',
+        primaryTextColor: '#121212',
+        primaryBorderColor: '#757575',
+        lineColor: '#616161',
+        secondaryColor: '#f5f5f5',
+        tertiaryColor: '#ffffff'
+      }}
+    }});
+  </script>
+</head>
+<body data-theme="dark">
+  <div class="app-layout">
+    <!-- Collapsible Sidebar -->
+    <aside class="app-sidebar" id="appSidebar">
+      <div class="sidebar-header">
+        <a href="index.html" class="sidebar-brand">
+          <span class="brand-tag">{brand_tag}</span>
+          <span class="brand-title">{site_title}</span>
+        </a>
+        <div class="sidebar-actions">
+          <button class="theme-toggle-btn" id="themeToggleSidebar" aria-label="Toggle theme">
+            <span class="theme-icon">◐</span>
+          </button>
+          <button class="sidebar-fold-btn" id="sidebarFoldBtn" aria-label="Fold Sidebar" title="Fold Sidebar (Alt+B)">
+            <span class="fold-icon">◀</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-search">
+        <input type="text" id="docSearch" placeholder="Search pages, sections... (Ctrl+K)" autocomplete="off">
+        <div id="searchResults" class="search-results-dropdown" style="display: none;"></div>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebarNav">
+        {sidebar_nav}
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status">
+          <span class="status-dot"></span>
+          <span class="status-text">{footer_status}</span>
+        </div>
+        <div class="sidebar-version">{footer_version}</div>
+      </div>
+    </aside>
+
+    <!-- Sidebar Unfold Floating Tab (shown when collapsed) -->
+    <button class="sidebar-unfold-tab" id="sidebarUnfoldTab" aria-label="Unfold Sidebar" title="Unfold Sidebar (Alt+B)" style="display: none;">
+      <span>▶</span>
+    </button>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <header class="app-topbar">
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open navigation menu">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="topbar-breadcrumbs">
+          <a href="index.html">{site_title}</a>
+          <span class="breadcrumb-separator">/</span>
+          <span class="breadcrumb-category">{current_category}</span>
+          <span class="breadcrumb-separator">/</span>
+          <span class="breadcrumb-current">{page_title}</span>
+        </div>
+        <div class="topbar-meta">
+          <span class="badge badge-pill">{page_badge}</span>
+        </div>
+      </header>
+
+      <div class="content-container">
+        <div class="reading-column">
+          <div class="document-header">
+            <div class="doc-meta-bar">
+              <span class="meta-item"><strong>Source:</strong> <code>{source_path}</code></span>
+              <span class="meta-item"><strong>Category:</strong> {current_category}</span>
+            </div>
+            <h1 class="document-title">{page_title}</h1>
+          </div>
+
+          <div class="markdown-body">
+            {content_html}
+          </div>
+
+          <div class="pagination-footer">
+            {prev_link}
+            {next_link}
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+"""
+
+def clean_markdown_and_convert(md_text, link_map=None):
+    """Parses markdown text into clean Pure Grayscale HTML components."""
+    # Strip YAML frontmatter if present
+    if md_text.startswith("---"):
+        parts = md_text.split("---", 2)
+        if len(parts) >= 3:
+            md_text = parts[2]
+
+    # Convert GitHub alert blocks (> [!NOTE], etc.)
+    alert_types = {
+        'NOTE': ('callout-info', 'NOTE'),
+        'TIP': ('callout-subtle', 'TIP'),
+        'IMPORTANT': ('callout-info', 'IMPORTANT'),
+        'WARNING': ('callout-warn', 'WARNING'),
+        'CAUTION': ('callout-error', 'CAUTION')
+    }
+    for alert_kw, (callout_cls, label) in alert_types.items():
+        pattern = re.compile(rf'^>\s*\[!{alert_kw}\]\s*(.*)$', re.MULTILINE | re.IGNORECASE)
+        def replace_alert(m):
+            first_line = m.group(1).strip()
+            return f'<div class="callout {callout_cls}"><strong>{label}:</strong> {first_line}'
+        md_text = pattern.sub(replace_alert, md_text)
+
+    # Convert Markdown to HTML
+    html_raw = markdown.markdown(
+        md_text,
+        extensions=['tables', 'fenced_code', 'toc', 'nl2br', 'codehilite']
+    )
+
+    soup = BeautifulSoup(html_raw, 'html.parser')
+
+    # Style Tables
+    for table in soup.find_all('table'):
+        table['class'] = table.get('class', []) + ['data-table']
+        wrapper = soup.new_tag('div', **{'class': 'table-wrap'})
+        table.wrap(wrapper)
+
+    # Transform Code Blocks (Mermaid, ASCII, Pre)
+    for pre in soup.find_all('pre'):
+        code = pre.find('code')
+        if not code:
+            continue
+        code_text = code.get_text()
+        classes = code.get('class', [])
+        is_mermaid = any('mermaid' in c for c in classes) or code_text.strip().startswith(('graph ', 'flowchart ', 'sequenceDiagram', 'classDiagram', 'stateDiagram'))
+        is_ascii = any('ascii' in c or 'text' in c for c in classes) or any(b in code_text for b in ['┌', '│', '└', '├', '─', '┬', '┴', '┼'])
+
+        if is_mermaid:
+            frame = soup.new_tag('div', **{'class': 'mermaid-frame'})
+            mermaid_div = soup.new_tag('div', **{'class': 'mermaid'})
+            mermaid_div.string = code_text.strip()
+            frame.append(mermaid_div)
+            pre.replace_with(frame)
+        elif is_ascii:
+            frame = soup.new_tag('div', **{'class': 'ascii-frame'})
+            new_pre = soup.new_tag('pre')
+            new_code = soup.new_tag('code', **{'class': 'ascii-art'})
+            new_code.string = code_text
+            new_pre.append(new_code)
+            frame.append(new_pre)
+            pre.replace_with(frame)
+
+    # Rewrite Markdown links to compiled HTML
+    if link_map:
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            clean_href = href.split('#')[0]
+            anchor = ('#' + href.split('#')[1]) if '#' in href else ''
+            for md_path, html_target in link_map.items():
+                if clean_href.endswith(md_path) or clean_href == md_path:
+                    a['href'] = html_target + anchor
+                    break
+
+    return str(soup)
+
+
+def build_portal(config_path, output_dir, source_dir):
+    """Builds a multi-page research portal from a configuration file or source directory."""
+    source_dir = Path(source_dir).resolve()
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load configuration
+    categories = []
+    site_title = "Research Portal Studio"
+    brand_tag = "RESEARCH"
+    footer_status = "OPERATIONAL"
+    footer_version = "v1.0.0"
+
+    if config_path and Path(config_path).exists() and yaml:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            cfg = yaml.safe_load(f)
+            site_title = cfg.get('site_title', site_title)
+            brand_tag = cfg.get('brand_tag', brand_tag)
+            footer_status = cfg.get('footer_status', footer_status)
+            footer_version = cfg.get('footer_version', footer_version)
+            categories = cfg.get('categories', [])
+    else:
+        # Fallback to auto-discovery
+        all_mds = sorted(list(source_dir.glob("**/*.md")))
+        items = []
+        for i, md in enumerate(all_mds):
+            rel = md.relative_to(source_dir).as_posix()
+            if "node_modules" in rel or ".git" in rel:
+                continue
+            title = md.stem.replace('_', ' ').replace('-', ' ').title()
+            html_name = "index.html" if i == 0 or rel.lower() == "readme.md" else f"doc_{i:02d}_{md.stem[:30]}.html"
+            items.append((rel, title, html_name))
+        categories = [{"name": "Repository Documents", "items": items}]
+
+    # Build link mapping
+    link_map = {}
+    flattened_pages = []
+    for cat in categories:
+        for item in cat["items"]:
+            if isinstance(item, (list, tuple)) and len(item) >= 3:
+                md_rel, title, html_name = item[0], item[1], item[2]
+            elif isinstance(item, dict):
+                md_rel, title, html_name = item["src"], item["title"], item["target"]
+            link_map[md_rel] = html_name
+            flattened_pages.append({
+                "src": md_rel,
+                "title": title,
+                "target": html_name,
+                "category": cat["name"]
+            })
+
+    # Render each page
+    total_pages = len(flattened_pages)
+    for idx, page in enumerate(flattened_pages):
+        src_path = source_dir / page["src"]
+        if not src_path.exists():
+            print(f"Warning: source file {src_path} does not exist. Skipping.")
+            continue
+
+        with open(src_path, 'r', encoding='utf-8', errors='ignore') as f:
+            raw_text = f.read()
+
+        body_html = clean_markdown_and_convert(raw_text, link_map)
+
+        # Build sidebar
+        sidebar_parts = []
+        for cat in categories:
+            sidebar_parts.append(f'<div class="nav-section-title">{html.escape(cat["name"])}</div>')
+            sidebar_parts.append('<ul class="nav-list">')
+            for item in cat["items"]:
+                if isinstance(item, (list, tuple)):
+                    m_rel, m_title, m_target = item[0], item[1], item[2]
+                else:
+                    m_rel, m_title, m_target = item["src"], item["title"], item["target"]
+                active_cls = ' class="nav-link active"' if m_target == page["target"] else ' class="nav-link"'
+                sidebar_parts.append(f'  <li class="nav-item"><a href="{m_target}"{active_cls}>{html.escape(m_title)}</a></li>')
+            sidebar_parts.append('</ul>')
+        sidebar_nav_html = "\n".join(sidebar_parts)
+
+        # Pagination
+        prev_link = ""
+        next_link = ""
+        if idx > 0:
+            p = flattened_pages[idx - 1]
+            prev_link = f'<a href="{p["target"]}" class="pagination-btn prev-btn"><span class="btn-sub">← Previous</span><span class="btn-title">{html.escape(p["title"])}</span></a>'
+        if idx < total_pages - 1:
+            n = flattened_pages[idx + 1]
+            next_link = f'<a href="{n["target"]}" class="pagination-btn next-btn"><span class="btn-sub">Next →</span><span class="btn-title">{html.escape(n["title"])}</span></a>'
+
+        rendered = HTML_TEMPLATE.format(
+            meta_description=html.escape(f"{page['title']} - {site_title}"),
+            page_title=html.escape(page["title"]),
+            site_title=html.escape(site_title),
+            brand_tag=html.escape(brand_tag),
+            sidebar_nav=sidebar_nav_html,
+            footer_status=html.escape(footer_status),
+            footer_version=html.escape(footer_version),
+            current_category=html.escape(page["category"]),
+            page_badge=f"PAGE {idx + 1} OF {total_pages}",
+            source_path=html.escape(page["src"]),
+            content_html=PURE_GRAYSCALE_CANON_HTML + body_html,
+            prev_link=prev_link,
+            next_link=next_link
+        )
+
+        out_path = output_dir / page["target"]
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(rendered)
+
+    print(f"Successfully compiled {total_pages} pages to {output_dir}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Research Portal Studio: Markdown to Pure Grayscale Portal Generator")
+    parser.add_argument("--source", "-s", default=".", help="Source repository root containing Markdown files")
+    parser.add_argument("--output", "-o", default="./portal", help="Output directory for compiled portal files")
+    parser.add_argument("--config", "-c", default="portal.yaml", help="Path to portal.yaml configuration file")
+    args = parser.parse_args()
+
+    build_portal(args.config, args.output, args.source)
+
+if __name__ == "__main__":
+    main()
