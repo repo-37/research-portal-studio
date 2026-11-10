@@ -1,0 +1,81 @@
+/**
+ * Cascade order, declared once.
+ *
+ * The Astryx stylesheets arrive inside `@layer reset` and `@layer astryx-base`.
+ * Any unlayered rule outranks every layer regardless of specificity, so the app
+ * layer is declared here and every app rule lives inside it. Nothing in this
+ * project may ship unlayered CSS again, or it silently beats the design system.
+ */
+@layer reset, astryx-base, app;
+
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+
+@layer app {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-background-body);
+    color: var(--color-text-primary);
+  }
+
+  /* Figures are first-class content here: a plotting surface gets the full
+     content width and never inherits a text measure. */
+  .figure-frame {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .figure-frame text {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    fill: var(--color-text-secondary);
+    font-size: 11px;
+  }
+
+  .figure-frame .grid line {
+    stroke: var(--color-border);
+    stroke-width: 1;
+  }
+
+  .figure-frame .axis {
+    stroke: var(--color-border-emphasized);
+    stroke-width: 1;
+  }
+
+  .figure-frame .bar {
+    fill: var(--color-text-secondary);
+  }
+
+  .figure-frame .bar-accent {
+    fill: var(--color-accent);
+  }
+
+  .figure-frame .dot {
+    fill: var(--color-text-secondary);
+    opacity: 0.72;
+  }
+
+  .figure-frame .cluster-a {
+    fill: var(--color-icon-blue);
+  }
+
+  .figure-frame .cluster-b {
+    fill: var(--color-icon-green);
+  }
+
+  .figure-frame .cluster-c {
+    fill: var(--color-icon-orange);
+  }
+
+  .figure-frame .trend {
+    fill: none;
+    stroke: var(--color-accent);
+    stroke-width: 2;
+  }
+}

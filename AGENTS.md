@@ -36,25 +36,32 @@ RULES:
 
 ## Local setup (not CLI-managed; edit freely)
 
-Installed 2026-11-10 with `@astryxdesign/cli@0.7.12`:
+Stack: Vite 7 + React 19 + Astryx 0.7.12, theme `neutral`.
 
 | package | version | role |
 |---|---|---|
 | `@astryxdesign/core` | 0.7.12 | components, base CSS (`reset.css`, `astryx.css`) |
-| `@astryxdesign/theme-neutral` | 0.7.12 | restrained warm gray theme |
-| `@stylexjs/stylex` | 0.19.1 | StyleX runtime; needs `@stylexjs/babel-plugin` in a bundler before any `xstyle` is compiled |
+| `@astryxdesign/theme-neutral` | 0.7.12 | theme, mounted once in `src/main.tsx` |
+| `@stylexjs/stylex` + `@stylexjs/unplugin` | 0.19.1 | StyleX runtime and Vite plugin |
+| `@heroicons/react` | 2.2.0 | nav icons |
 | `react`, `react-dom` | 19.3.1 | peer dependencies of core |
+| `vite` | 7.3.8 | dev server and build |
 | `@astryxdesign/cli` | 0.7.12 | devDependency; run as `npx astryx` |
 
-Before rendering a component, in this order:
+Commands: `npm run dev`, `npm run build`, `npm run preview`, `npm run typecheck`, `npm run doctor`.
 
-1. Base CSS, from the app entry: `@import "@astryxdesign/core/reset.css";` then `@import "@astryxdesign/core/astryx.css";`
-2. Theme: `npx astryx theme add neutral` writes `astryx-themes`, then wrap the root in `<Theme theme={themes[defaultThemeSlug]}>`.
-3. Components import from their own entry, the path `npx astryx component <Name>` prints.
+Layout:
 
-Two things block a drop-in adoption here, both measured on 2026-11-10:
+- `index.html` + `src/main.tsx` are the Vite entry. `<Theme theme={themes[defaultThemeSlug]}>` wraps the app once.
+- `src/App.tsx` is the shell: `AppShell` + `SideNav` + `Layout`. Every sidebar item is a section component in `src/sections/`, rendered in `Layout contentWidth={1280}` because plots and tables need width.
+- `src/global.css` declares `@layer reset, astryx-base, app;` first, then imports the core stylesheets. An unlayered rule outranks every layer, so app CSS must stay inside `@layer app`.
+- `src/figures/charts.tsx` holds inline-SVG plot primitives. `src/components/Figure.tsx` is the shared frame: number, title, plotting surface, source caption.
+- `legacy/` keeps the previous static showcase page and its Three.js workspaces (`legacy/index.html`, `legacy/app.js`). It is not part of the Vite build.
+- `bin/research-portal-studio` still emits portals that link `style.css`. That stylesheet stays at the repo root and belongs to the compiler, not to the app.
 
-- **Cascade layers.** `style.css` is unlayered, and the Astryx stylesheets live in `@layer reset` and `@layer astryx-base`. Unlayered styles beat any layer regardless of specificity, so the 2007-line `style.css` would override every Astryx component. Adopting Astryx means declaring `@layer reset, astryx-base, app;` at the top of `style.css` and wrapping its body in `@layer app { ... }`.
-- **No bundler.** This is a static site: `index.html`, `app.js`, `style.css`, no build step. Nothing imports React today, so no component renders until an entry and a bundler exist. `npx astryx doctor` reports `themes: [warn]` for this reason.
+Known warnings, measured with `npx astryx doctor --built dist`:
 
-Verify with `npx astryx doctor`.
+- `theme-fonts`: the neutral theme imports Figtree from `fonts.googleapis.com`, which the doctor cannot verify offline. Self-host the font, or accept the external import.
+- The app bundle is ~955 kB in one chunk, and the CSS asset ~575 kB. Code-split the sections before this is a public site.
+
+Verify with `npx astryx doctor && npx astryx doctor --built dist`.

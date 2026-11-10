@@ -3,22 +3,33 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Deterministic markdown-to-HTML portal compiler and static site, with the Astryx design system available for React-rendered surfaces.",
+  "description": "Deterministic markdown-to-HTML research portal compiler, with a Vite + React reading surface on the Astryx design system.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "astryx": "astryx",
-    "doctor": "astryx doctor"
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "doctor": "astryx doctor && astryx doctor --built dist",
+    "astryx": "astryx"
   },
   "dependencies": {
     "@astryxdesign/core": "^0.7.12",
     "@astryxdesign/theme-neutral": "^0.7.12",
+    "@heroicons/react": "^2.2.0",
     "@stylexjs/stylex": "^0.19.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "^0.7.12"
+    "@astryxdesign/cli": "^0.7.12",
+    "@stylexjs/unplugin": "^0.19.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.8"
   }
 }
