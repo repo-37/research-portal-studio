@@ -10,7 +10,15 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
+  // Reachable from the fleet, not just loopback: research pages get shared.
   server: {
-    port: 5173,
+    host: '0.0.0.0',
+    port: 3774,
+    strictPort: true,
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 3774,
+    strictPort: true,
   },
 });
